@@ -39,14 +39,13 @@ level04/src/level04
 On the VM, start GDB with the binary loaded:
 
 ```sh
-gdb /home/users/level04/level04
+gdb ./level04
 ```
 
 The VM uses GDB 7.4, so use the old logging syntax:
 
 ```gdb
 set disassembly-flavor intel
-set pagination off
 set logging file /tmp/level04_main_dump_gdb
 set logging overwrite on
 set logging on
