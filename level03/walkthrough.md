@@ -23,7 +23,7 @@ When SSH asks for a password, paste the content of `level02/flag`.
 From the repository root on the host, copy the ELF binary:
 
 ```sh
-scp -P 2222 level03@127.0.0.1:/home/users/level03/level03 ./level03/level03
+scp -P 2222 level03@127.0.0.1:/home/users/level03/level03 ./level03/src/level03
 ```
 
 Use the content of `level02/flag` as the password.
@@ -31,7 +31,7 @@ Use the content of `level02/flag` as the password.
 The local binary should now be:
 
 ```text
-level03/level03
+level03/src/level03
 ```
 
 ## Save `main_dump_gdb`
@@ -39,7 +39,7 @@ level03/level03
 On the VM, connect as `level03` and start GDB with the binary loaded:
 
 ```sh
-gdb ./level03
+gdb ./level03/src/level03
 ```
 
 The VM uses GDB 7.4, so use the old logging syntax:
@@ -63,7 +63,7 @@ ls -l /tmp/main_dump_gdb
 From the repository root on the host, copy it into `level03`:
 
 ```sh
-scp -P 2222 level03@127.0.0.1:/tmp/main_dump_gdb ./level03/main_dump_gdb
+scp -P 2222 level03@127.0.0.1:/tmp/main_dump_gdb ./level03/src/main_dump_gdb
 ```
 
 Use the content of `level02/flag` as the password.
@@ -71,8 +71,8 @@ Use the content of `level02/flag` as the password.
 The local files for the next analysis step are:
 
 ```text
-level03/level03
-level03/main_dump_gdb
+level03/src/level03
+level03/src/main_dump_gdb
 ```
 
 ## Decode the addresses from `main`
@@ -95,10 +95,10 @@ mov    eax,0x8048a85
 Decode them using the local level03 binary:
 
 ```sh
-./decode_address level03/level03 0x8048a48
-./decode_address level03/level03 0x8048a6c
-./decode_address level03/level03 0x8048a7b
-./decode_address level03/level03 0x8048a85
+./decode_address level03/src/level03 0x8048a48
+./decode_address level03/src/level03 0x8048a6c
+./decode_address level03/src/level03 0x8048a7b
+./decode_address level03/src/level03 0x8048a85
 ```
 
 The output is:
@@ -127,7 +127,7 @@ Connect to the VM as `level03` and load the correct binary:
 
 ```sh
 ssh level03@127.0.0.1 -p 2222
-gdb /home/users/level03/level03
+gdb ./level03
 ```
 
 Save only the disassembly of `test`:
@@ -151,13 +151,13 @@ ls -l /tmp/level03_test_dump_gdb
 From the repository root on the host, copy the dump:
 
 ```sh
-scp -P 2222 level03@127.0.0.1:/tmp/level03_test_dump_gdb ./level03/test_dump_gdb
+scp -P 2222 level03@127.0.0.1:/tmp/level03_test_dump_gdb ./level03/src/test_dump_gdb
 ```
 
 Use the content of `level02/flag` as the password. The new local file should be:
 
 ```text
-level03/test_dump_gdb
+level03/src/test_dump_gdb
 ```
 
 ## Inspect the addresses in `test`
@@ -202,7 +202,7 @@ Connect to the VM as `level03` and load the binary:
 
 ```sh
 ssh level03@127.0.0.1 -p 2222
-gdb /home/users/level03/level03
+gdb ./level03
 ```
 
 Save only the disassembly of `decrypt`:
@@ -226,13 +226,13 @@ ls -l /tmp/level03_decrypt_dump_gdb
 From the repository root on the host, copy it into `level03`:
 
 ```sh
-scp -P 2222 level03@127.0.0.1:/tmp/level03_decrypt_dump_gdb ./level03/decrypt_dump_gdb
+scp -P 2222 level03@127.0.0.1:/tmp/level03_decrypt_dump_gdb ./level03/src/decrypt_dump_gdb
 ```
 
 Use the content of `level02/flag` as the password. The new local file should be:
 
 ```text
-level03/decrypt_dump_gdb
+level03/src/decrypt_dump_gdb
 ```
 
 ## Decode the addresses in `decrypt`
@@ -248,9 +248,9 @@ mov    DWORD PTR [esp],0x80489dc
 Decode them from the repository root:
 
 ```sh
-./decode_address level03/level03 0x80489c3
-./decode_address level03/level03 0x80489d4
-./decode_address level03/level03 0x80489dc
+./decode_address level03/src/level03 0x80489c3
+./decode_address level03/src/level03 0x80489d4
+./decode_address level03/src/level03 0x80489dc
 ```
 
 The output is:
@@ -279,7 +279,7 @@ They are the encrypted bytes copied into a local buffer. They will be processed 
 Check the binary format:
 
 ```sh
-file level03/level03
+file level03/src/level03
 ```
 
 The relevant part of the output is:
@@ -426,11 +426,11 @@ Every pair gives the same key:
 key = 0x12 = 18
 ```
 
-Verify the XOR operation with `level03/xor_decode.c`:
+Verify the XOR operation with `level03/src/xor_decode.c`:
 
 ```sh
-gcc -Wall -Wextra -Werror level03/xor_decode.c -o level03/xor_decode
-./level03/xor_decode
+gcc -Wall -Wextra -Werror level03/src/xor_decode.c -o level03/src/xor_decode
+./level03/src/xor_decode
 ```
 
 The program does not hardcode the key. It tries every possible one-byte value from `0x00` through `0xff`:

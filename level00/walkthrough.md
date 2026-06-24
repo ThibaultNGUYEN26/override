@@ -7,7 +7,7 @@ For this level, we inspect `main` manually with GDB and decode the hexadecimal c
 From the repository root, copy the `level00` ELF binary from the VM:
 
 ```sh
-scp -P 2222 level00@127.0.0.1:/home/users/level00/level00 ./level00/level00
+scp -P 2222 level00@127.0.0.1:/home/users/level00/level00 ./level00/src/level00
 ```
 
 For the initial `level00` account, use `level00` as the password.
@@ -15,7 +15,7 @@ For the initial `level00` account, use `level00` as the password.
 The local binary should now be:
 
 ```text
-level00/level00
+level00/src/level00
 ```
 
 Keeping the ELF locally allows its sections, symbols, and stored data to be
@@ -39,7 +39,9 @@ gdb ./level00
 The VM uses GDB 7.4, so use the old logging syntax:
 
 ```gdb
-set logging file /tmp/dump_gdb
+set disassembly-flavor intel
+set pagination off
+set logging file /tmp/level00_main_dump_gdb
 set logging overwrite on
 set logging on
 disas main
@@ -50,20 +52,20 @@ quit
 Verify the file exists before disconnecting:
 
 ```sh
-ls -l /tmp/dump_gdb
+ls -l /tmp/level00_main_dump_gdb
 ```
 
 From the host, if the current directory is already `OverRide/level00`, copy it
 with:
 
 ```sh
-scp -P 2222 level00@127.0.0.1:/tmp/dump_gdb ./dump_gdb
+scp -P 2222 level00@127.0.0.1:/tmp/level00_main_dump_gdb ./src/dump_gdb
 ```
 
 If the current directory is the `OverRide` repository root, use:
 
 ```sh
-scp -P 2222 level00@127.0.0.1:/tmp/dump_gdb ./level00/dump_gdb
+scp -P 2222 level00@127.0.0.1:/tmp/level00_main_dump_gdb ./level00/src/dump_gdb
 ```
 
 ## Read `main` manually

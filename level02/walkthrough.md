@@ -23,7 +23,7 @@ When SSH asks for a password, paste the content of `level01/flag`.
 From the repository root on the host, copy the ELF binary:
 
 ```sh
-scp -P 2222 level02@127.0.0.1:/home/users/level02/level02 ./level02/level02
+scp -P 2222 level02@127.0.0.1:/home/users/level02/level02 ./level02/src/level02
 ```
 
 Use the content of `level01/flag` as the password.
@@ -31,7 +31,7 @@ Use the content of `level01/flag` as the password.
 The local binary should now be:
 
 ```text
-level02/level02
+level02/src/level02
 ```
 
 ## Save `main_dump_gdb`
@@ -46,7 +46,8 @@ The VM uses GDB 7.4, so use the old logging syntax:
 
 ```gdb
 set disassembly-flavor intel
-set logging file /tmp/main_dump_gdb
+set pagination off
+set logging file /tmp/level02_main_dump_gdb
 set logging overwrite on
 set logging on
 disas main
@@ -57,13 +58,13 @@ quit
 Verify that the dump exists on the VM:
 
 ```sh
-ls -l /tmp/main_dump_gdb
+ls -l /tmp/level02_main_dump_gdb
 ```
 
 From the repository root on the host, copy it into `level02`:
 
 ```sh
-scp -P 2222 level02@127.0.0.1:/tmp/main_dump_gdb ./level02/main_dump_gdb
+scp -P 2222 level02@127.0.0.1:/tmp/level02_main_dump_gdb ./level02/src/main_dump_gdb
 ```
 
 Use the content of `level01/flag` as the password.
@@ -71,8 +72,8 @@ Use the content of `level01/flag` as the password.
 The local files for the next analysis step are:
 
 ```text
-level02/level02
-level02/main_dump_gdb
+level02/src/level02
+level02/src/main_dump_gdb
 ```
 
 ## Decode addresses from `main_dump_gdb`
@@ -99,11 +100,11 @@ mov    eax,0x400bd0
 Decode them:
 
 ```sh
-./decode_address level02/level02 0x400bb0
-./decode_address level02/level02 0x400bb2
-./decode_address level02/level02 0x400bd0
-./decode_address level02/level02 0x400bf5
-./decode_address level02/level02 0x400bf8
+./decode_address level02/src/level02 0x400bb0
+./decode_address level02/src/level02 0x400bb2
+./decode_address level02/src/level02 0x400bd0
+./decode_address level02/src/level02 0x400bf5
+./decode_address level02/src/level02 0x400bf8
 ```
 
 Output:
@@ -121,16 +122,16 @@ This shows that `main` opens `/home/users/level03/.pass` in read mode and reads 
 Decode the remaining display and command strings:
 
 ```sh
-./decode_address level02/level02 0x400c20
-./decode_address level02/level02 0x400c50
-./decode_address level02/level02 0x400c80
-./decode_address level02/level02 0x400cb0
-./decode_address level02/level02 0x400cd9
-./decode_address level02/level02 0x400ce8
-./decode_address level02/level02 0x400cf8
-./decode_address level02/level02 0x400d22
-./decode_address level02/level02 0x400d32
-./decode_address level02/level02 0x400d3a
+./decode_address level02/src/level02 0x400c20
+./decode_address level02/src/level02 0x400c50
+./decode_address level02/src/level02 0x400c80
+./decode_address level02/src/level02 0x400cb0
+./decode_address level02/src/level02 0x400cd9
+./decode_address level02/src/level02 0x400ce8
+./decode_address level02/src/level02 0x400cf8
+./decode_address level02/src/level02 0x400d22
+./decode_address level02/src/level02 0x400d32
+./decode_address level02/src/level02 0x400d3a
 ```
 
 Important results:

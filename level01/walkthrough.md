@@ -13,7 +13,7 @@ cat level00/flag
 From the repository root, copy the `level01` ELF binary from the VM:
 
 ```sh
-scp -P 2222 level01@127.0.0.1:/home/users/level01/level01 ./level01/level01
+scp -P 2222 level01@127.0.0.1:/home/users/level01/level01 ./level01/src/level01
 ```
 
 When `scp` asks for a password, paste the content of `level00/flag`.
@@ -21,7 +21,7 @@ When `scp` asks for a password, paste the content of `level00/flag`.
 The local binary should now be:
 
 ```text
-level01/level01
+level01/src/level01
 ```
 
 This file is required by `decode_address`, which reads the ELF program headers
@@ -39,7 +39,8 @@ Save only `main` first:
 
 ```gdb
 set disassembly-flavor intel
-set logging file /tmp/main_dump_gdb
+set pagination off
+set logging file /tmp/level01_main_dump_gdb
 set logging overwrite on
 set logging on
 disas main
@@ -50,7 +51,7 @@ quit
 From the repository root on the host, copy this first dump:
 
 ```sh
-scp -P 2222 level01@127.0.0.1:/tmp/main_dump_gdb ./level01/main_dump_gdb
+scp -P 2222 level01@127.0.0.1:/tmp/level01_main_dump_gdb ./level01/src/main_dump_gdb
 ```
 
 Use the content of `level00/flag` as the password.
@@ -108,7 +109,8 @@ Save `verify_user_name`:
 
 ```gdb
 set disassembly-flavor intel
-set logging file /tmp/username_dump_gdb
+set pagination off
+set logging file /tmp/level01_username_dump_gdb
 set logging overwrite on
 set logging on
 disas verify_user_name
@@ -118,7 +120,7 @@ set logging off
 Save `verify_user_pass`:
 
 ```gdb
-set logging file /tmp/password_dump_gdb
+set logging file /tmp/level01_password_dump_gdb
 set logging overwrite on
 set logging on
 disas verify_user_pass
@@ -129,8 +131,8 @@ quit
 Copy both files from the host:
 
 ```sh
-scp -P 2222 level01@127.0.0.1:/tmp/username_dump_gdb ./level01/username_dump_gdb
-scp -P 2222 level01@127.0.0.1:/tmp/password_dump_gdb ./level01/password_dump_gdb
+scp -P 2222 level01@127.0.0.1:/tmp/level01_username_dump_gdb ./level01/src/username_dump_gdb
+scp -P 2222 level01@127.0.0.1:/tmp/level01_password_dump_gdb ./level01/src/password_dump_gdb
 ```
 
 ## 4. Prepare `decode_address`
@@ -171,9 +173,9 @@ This gives three data addresses to investigate:
 Decode all three:
 
 ```sh
-./decode_address level01/level01 0x08048690
-./decode_address level01/level01 0x0804a040
-./decode_address level01/level01 0x080486a8
+./decode_address level01/src/level01 0x08048690
+./decode_address level01/src/level01 0x0804a040
+./decode_address level01/src/level01 0x080486a8
 ```
 
 Output:
@@ -216,7 +218,7 @@ The address to investigate is:
 Decode it:
 
 ```sh
-./decode_address level01/level01 0x080486b0
+./decode_address level01/src/level01 0x080486b0
 ```
 
 Output:
