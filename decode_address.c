@@ -128,6 +128,52 @@ static int virtual_to_offset(FILE *file, const t_elf *elf, uint64_t address,
     return result == 1;
 }
 
+static int executable_section32(FILE *file, const Elf32_Ehdr *header,
+                                uint64_t address)
+{
+    Elf32_Shdr section;
+    uint16_t i;
+
+    for (i = 0; i < header->e_shnum; i++) {
+        if (fseek(file, (long)header->e_shoff
+                        + (long)i * header->e_shentsize,
+                  SEEK_SET) != 0
+            || fread(&section, sizeof(section), 1, file) != 1)
+            return -1;
+        if (address >= section.sh_addr
+            && address < (uint64_t)section.sh_addr + section.sh_size)
+            return (section.sh_flags & SHF_EXECINSTR) != 0;
+    }
+    return 0;
+}
+
+static int executable_section64(FILE *file, const Elf64_Ehdr *header,
+                                uint64_t address)
+{
+    Elf64_Shdr section;
+    uint16_t i;
+
+    for (i = 0; i < header->e_shnum; i++) {
+        if (fseek(file, (long)header->e_shoff
+                        + (long)i * header->e_shentsize,
+                  SEEK_SET) != 0
+            || fread(&section, sizeof(section), 1, file) != 1)
+            return -1;
+        if (address >= section.sh_addr
+            && address < section.sh_addr + section.sh_size)
+            return (section.sh_flags & SHF_EXECINSTR) != 0;
+    }
+    return 0;
+}
+
+static int address_is_executable(FILE *file, const t_elf *elf,
+                                 uint64_t address)
+{
+    if (elf->elf_class == ELFCLASS32)
+        return executable_section32(file, &elf->header32, address);
+    return executable_section64(file, &elf->header64, address);
+}
+
 static void print_byte(unsigned char byte)
 {
     if (byte == '\n')
@@ -150,6 +196,7 @@ static int decode_address(FILE *file, const t_elf *elf, const char *text)
     unsigned char byte;
     uint64_t offset;
     char *end;
+    int executable;
     size_t count;
 
     errno = 0;
@@ -160,6 +207,16 @@ static int decode_address(FILE *file, const t_elf *elf, const char *text)
     }
     if (!virtual_to_offset(file, elf, parsed, &offset))
         return 0;
+    executable = address_is_executable(file, elf, parsed);
+    if (executable < 0)
+        return 0;
+    if (executable) {
+        fprintf(stderr,
+                "0x%llx: address is in an executable ELF section "
+                "(code), not string data\n",
+                parsed);
+        return 0;
+    }
     if (fseek(file, (long)offset, SEEK_SET) != 0)
         return 0;
 
