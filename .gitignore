@@ -3,3 +3,4 @@ OverRide.iso
 decode_address
 level[0-9][0-9]/src/level[0-9][0-9]
 level03/src/xor_decode
+level06/src/serial_generator
