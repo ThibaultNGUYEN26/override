@@ -1,4 +1,5 @@
 OverRide.iso
 **/*dump*
 decode_address
-level[0-9][0-9]/level[0-9][0-9]
+level[0-9][0-9]/src/level[0-9][0-9]
+level03/src/xor_decode
